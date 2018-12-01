@@ -1,19 +1,22 @@
-const request = require('request');
-const convert = require('xml-js');
-const fs = require('fs');
+const request = require('request')
+const convert = require('xml-js')
+const fs = require('fs')
 
-async function run() {
+const MAX_RETRY_TIMES = 5
 
-    let num = 0
-    while(num++ < 100) {
-        const outputStream = fs.createWriteStream(`data/${((num - 1) * 10000 + 1).toString().padStart(7, "0")}-${(num * 10000).toString().padStart(7, "0")}.txt`);
-        for(let s = 0; s < 1000; s++) {
+async function run(start, end) {
+    let num = start
+    while(num++ < end) {
+        const outputStream = fs.createWriteStream(`data/${((num - 1) * 10000 + 1).toString().padStart(7, "0")}-${(num * 10000).toString().padStart(7, "0")}.txt`)
+        let retry = 0
+        let s = 0;
+        while(s < 1000) {
             try {
                 console.log(`正在请求第${(num - 1) * 1000 + s + 1}页`)
                 const text = await getInfo(`http://nssd.org/articles/articlesearch.aspx?q=%7B%22page%22%3A%22${(num - 1) * 1000 + s + 1}%22%7D&&hidpage=0&&hfldSelectedIds=&`)
                 const reg = /article_detail\.aspx\?id=(\d+)/g
                 const ids = []
-                let ss = 0;
+                let ss = 0
                 let x = reg.exec(text)
                 while(x && x[1] && ss < 10) {
                     ids.push(x[1])
@@ -52,9 +55,17 @@ async function run() {
                     }
                     outputStream.write(`${JSON.stringify(info)}\n`)
                 }
+                s++
             } catch(e) {
-                console(e)
-                continue
+                console.log(e)
+                if(retry < MAX_RETRY_TIMES) {
+                    retry++
+                    console.log(`获取${(num - 1) * 1000 + s + 1}失败，第${retry}重新获取！`)
+                } else {
+                    retry = 0
+                    s++
+                    console.log(`获取${(num - 1) * 1000 + s + 1}失败，超过最大重试次数，直接跳过！`)
+                }
             }
         }
         outputStream.end()
@@ -63,16 +74,17 @@ async function run() {
 
 
 async function getInfo(url, type="GET", form) {
+    const timeout = 60 * 1000
     return new Promise((resolve, reject) => {
         if(type == "POST") {
-            request.post({url, form}, (err, res, body) => {
+            request.post({url, form, timeout}, (err, res, body) => {
                 if(err || res.statusCode !== 200) {
                     return reject(err || res.statusCode)
                 }
                 resolve(body)
             })
         } else {
-            request(url, (err, res, body) => {
+            request({url, timeout}, (err, res, body) => {
                 if(err || res.statusCode !== 200) {
                     return reject(err || res.statusCode)
                 }
@@ -82,4 +94,4 @@ async function getInfo(url, type="GET", form) {
     })
 }
 
-run()
+module.exports = run
